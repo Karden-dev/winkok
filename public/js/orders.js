@@ -64,16 +64,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const selectedOrdersIdsSpan = document.getElementById('selectedOrdersIds');
     
     let allOrders = [];
-    let filteredOrders = []; // Nouvelle variable pour les commandes filtrées
-    let currentPage = 1;
-    let itemsPerPage = parseInt(document.getElementById('itemsPerPage').value);
-    const paginationInfo = document.getElementById('paginationInfo');
-    const prevPageBtn = document.getElementById('prevPage');
-    const nextPageBtn = document.getElementById('nextPage');
-    const firstPageBtn = document.getElementById('firstPage');
-    const lastPageBtn = document.getElementById('lastPage');
-    const itemsPerPageSelect = document.getElementById('itemsPerPage');
-    
     let shopsCache = [];
     let deliverymenCache = [];
     const CURRENT_USER_ID = 1;
@@ -131,62 +121,38 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const fetchAllData = async () => {
         showLoading(ordersTableBody);
-        try {
-            // On récupère toutes les commandes en une fois
-            const ordersRes = await axios.get(`${API_BASE_URL}/orders`);
-            allOrders = ordersRes.data;
-            applyFilters(); // Applique les filtres (y compris la date du jour)
-        } catch (error) {
-            console.error("Erreur lors de la récupération des données:", error);
-            ordersTableBody.innerHTML = `<tr><td colspan="12" class="text-center text-danger p-4">Erreur lors du chargement des données.</td></tr>`;
-        }
+        await applyFilters();
     };
 
-    const applyFilters = () => {
-        const searchText = searchInput.value.toLowerCase();
+    const applyFilters = async () => {
+        const searchText = searchInput.value;
         const startDate = startDateFilter.value;
         const endDate = endDateFilter.value;
         const status = selectedStatusFilter;
+        try {
+            const params = {};
+            if (searchText) params.search = searchText;
+            if (startDate) params.startDate = startDate;
+            if (endDate) params.endDate = endDate;
+            if (status) params.status = status;
 
-        filteredOrders = allOrders.filter(order => {
-            const orderDate = new Date(order.created_at).toISOString().slice(0, 10);
-            
-            // Logique de filtrage
-            const isDateMatch = (!startDate || orderDate >= startDate) && (!endDate || orderDate <= endDate);
-            const isStatusMatch = !status || order.status === status;
-
-            // Ajout du nom du livreur, ID de commande, etc., à la recherche
-            const searchableFields = [
-                order.customer_name?.toLowerCase(),
-                order.customer_phone?.toLowerCase(),
-                order.delivery_location?.toLowerCase(),
-                order.shop_name?.toLowerCase(),
-                order.deliveryman_name?.toLowerCase(),
-                order.id.toString(),
-            ];
-            const isTextMatch = !searchText || searchableFields.some(field => field?.includes(searchText));
-
-            return isDateMatch && isStatusMatch && isTextMatch;
-        });
-
-        currentPage = 1; // Réinitialise à la première page après un nouveau filtre
-        renderOrdersTable(filteredOrders);
+            const ordersRes = await axios.get(`${API_BASE_URL}/orders`, { params });
+            allOrders = ordersRes.data;
+            renderOrdersTable(allOrders);
+        } catch (error) {
+            console.error("Erreur lors de l'application des filtres:", error);
+            ordersTableBody.innerHTML = `<tr><td colspan="12" class="text-center text-danger p-4">Erreur lors du filtrage des données.</td></tr>`;
+        }
     };
-
 
     const renderOrdersTable = (orders) => {
         ordersTableBody.innerHTML = '';
         if (!orders || orders.length === 0) {
             ordersTableBody.innerHTML = `<tr><td colspan="12" class="text-center p-3">Aucune commande trouvée.</td></tr>`;
-            updatePaginationControls(0); // Met à jour la pagination même s'il n'y a pas de résultats
             return;
         }
 
-        const start = (currentPage - 1) * itemsPerPage;
-        const end = start + itemsPerPage;
-        const paginatedItems = orders.slice(start, end);
-
-        paginatedItems.forEach(order => {
+        orders.forEach(order => {
             const row = document.createElement('tr');
             const totalArticleAmount = parseFloat(order.article_amount || 0);
             const deliveryFee = parseFloat(order.delivery_fee || 0);
@@ -249,71 +215,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             ordersTableBody.appendChild(row);
         });
 
-        // Activer les tooltips après le rendu
         const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
         tooltipTriggerList.map(function(tooltipTriggerEl) {
             return new bootstrap.Tooltip(tooltipTriggerEl);
         });
-        
-        updatePaginationControls(orders.length);
     };
 
-    // NOUVELLE FONCTION pour mettre à jour les contrôles de pagination
-    const updatePaginationControls = (totalOrders) => {
-        const totalPages = Math.ceil(totalOrders / itemsPerPage);
-        
-        if (totalOrders === 0) {
-             paginationInfo.textContent = 'Page 0 de 0 (0 commande)';
-        } else {
-             paginationInfo.textContent = `Page ${currentPage} de ${totalPages} (${totalOrders} commandes)`;
-        }
-        
-        firstPageBtn.classList.toggle('disabled', currentPage === 1 || totalOrders === 0);
-        prevPageBtn.classList.toggle('disabled', currentPage === 1 || totalOrders === 0);
-        nextPageBtn.classList.toggle('disabled', currentPage === totalPages || totalOrders === 0);
-        lastPageBtn.classList.toggle('disabled', currentPage === totalPages || totalOrders === 0);
-        
-        document.getElementById('currentPageDisplay').textContent = totalPages === 0 ? 0 : currentPage;
-    };
-
-    // NOUVEAUX GESTIONNAIRES d'événements pour la pagination
-    prevPageBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        if (currentPage > 1) {
-            currentPage--;
-            renderOrdersTable(filteredOrders);
-        }
-    });
-
-    nextPageBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        if (currentPage < Math.ceil(filteredOrders.length / itemsPerPage)) {
-            currentPage++;
-            renderOrdersTable(filteredOrders);
-        }
-    });
-
-    firstPageBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        currentPage = 1;
-        renderOrdersTable(filteredOrders);
-    });
-
-    lastPageBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        const totalPages = Math.ceil(filteredOrders.length / itemsPerPage);
-        if (totalPages > 0) {
-            currentPage = totalPages;
-            renderOrdersTable(filteredOrders);
-        }
-    });
-
-    itemsPerPageSelect.addEventListener('change', (e) => {
-        itemsPerPage = parseInt(e.target.value);
-        currentPage = 1; // Réinitialise à la première page
-        renderOrdersTable(filteredOrders);
-    });
-    
     const addItemRow = (container, item = {}) => {
         const itemRow = document.createElement('div');
         itemRow.className = 'row g-2 item-row mb-2';
@@ -428,8 +335,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             customer_phone: document.getElementById('customerPhone').value,
             delivery_location: document.getElementById('deliveryLocation').value,
             article_amount: totalArticleAmount,
-            // CORRECTION: Convertit la valeur en un nombre
-            delivery_fee: parseFloat(document.getElementById('deliveryFee').value),
+            delivery_fee: document.getElementById('deliveryFee').value,
             expedition_fee: isExpeditionCheckbox.checked ? parseFloat(expeditionFeeInput.value) : 0,
             created_by: 1,
             items: items
@@ -466,8 +372,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             customer_phone: document.getElementById('editCustomerPhone').value,
             delivery_location: document.getElementById('editDeliveryLocation').value,
             article_amount: totalArticleAmount,
-            // CORRECTION: Convertit la valeur en un nombre
-            delivery_fee: parseFloat(document.getElementById('editDeliveryFee').value),
+            delivery_fee: document.getElementById('editDeliveryFee').value,
             expedition_fee: expeditionFee,
             items: items,
             deliveryman_id: editDeliverymanIdInput.value || null,
@@ -629,7 +534,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         } else if (target.classList.contains('assign-btn')) {
             currentOrdersToAssign = [orderId];
-            selectedOrdersIdsSpan.textContent = currentOrdersToAssign.join(', ');
             assignDeliveryModal.show();
             deliverymanSearchInput.value = '';
             assignDeliverymanIdInput.value = '';
@@ -697,9 +601,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const selectedIds = Array.from(document.querySelectorAll('.order-checkbox:checked'))
                                 .map(cb => cb.dataset.orderId);
         
-        if (selectedIds.length === 0 && e.target.closest('.dropdown-item')) {
+        if (selectedIds.length === 0) {
             showNotification("Veuillez sélectionner au moins une commande.", 'warning');
-            e.stopPropagation(); // Empêche l'action de se poursuivre
             return;
         }
 
@@ -709,19 +612,61 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             if (action.classList.contains('bulk-assign-btn')) {
                 currentOrdersToAssign = selectedIds;
-                selectedOrdersIdsSpan.textContent = currentOrdersToAssign.join(', ');
                 assignDeliveryModal.show();
                 deliverymanSearchInput.value = '';
                 assignDeliverymanIdInput.value = '';
             } else if (action.classList.contains('bulk-status-delivered-btn')) {
-                currentOrdersToAssign = selectedIds; // Stocke les ID pour les gestionnaires de boutons
                 bulkStatusActionModal.show();
                 bulkDeliveredPaymentForm.classList.remove('d-none');
                 
-            } else if (action.classList.contains('bulk-status-failed-btn')) {
-                currentOrdersToAssign = selectedIds; // Stocke les ID pour le formulaire
-                bulkFailedDeliveryModal.show();
+                document.getElementById('bulkPaymentCashBtn').onclick = async () => {
+                    try {
+                        const promises = selectedIds.map(id =>
+                            axios.put(`${API_BASE_URL}/orders/${id}/status`, { status: 'delivered', payment_status: 'cash', userId: CURRENT_USER_ID })
+                        );
+                        await Promise.all(promises);
+                        showNotification(`${selectedIds.length} commande(s) livrée(s) (cash) avec succès.`);
+                    } catch (error) {
+                        showNotification("Erreur lors de la mise à jour des statuts.", 'danger');
+                    } finally {
+                        bulkStatusActionModal.hide();
+                        await fetchAllData();
+                    }
+                };
+                
+                document.getElementById('bulkPaymentSupplierBtn').onclick = async () => {
+                    try {
+                        const promises = selectedIds.map(id =>
+                            axios.put(`${API_BASE_URL}/orders/${id}/status`, { status: 'delivered', payment_status: 'paid_to_supplier', userId: CURRENT_USER_ID })
+                        );
+                        await Promise.all(promises);
+                        showNotification(`${selectedIds.length} commande(s) livrée(s) (paiement marchand) avec succès.`);
+                    } catch (error) {
+                        showNotification("Erreur lors de la mise à jour des statuts.", 'danger');
+                    } finally {
+                        bulkStatusActionModal.hide();
+                        await fetchAllData();
+                    }
+                };
 
+            } else if (action.classList.contains('bulk-status-failed-btn')) {
+                bulkFailedDeliveryModal.show();
+                bulkFailedDeliveryForm.onsubmit = async (e) => {
+                    e.preventDefault();
+                    const amountReceived = document.getElementById('bulkAmountReceived').value;
+                    try {
+                        const promises = selectedIds.map(id =>
+                            axios.put(`${API_BASE_URL}/orders/${id}/status`, { status: 'failed_delivery', amount_received: amountReceived, userId: CURRENT_USER_ID })
+                        );
+                        await Promise.all(promises);
+                        showNotification(`${selectedIds.length} commande(s) mise(s) à jour en Livraison ratée.`);
+                    } catch (error) {
+                        showNotification("Erreur lors de la mise à jour des statuts.", 'danger');
+                    } finally {
+                        bulkFailedDeliveryModal.hide();
+                        await fetchAllData();
+                    }
+                };
             } else if (action.classList.contains('bulk-status-reported-btn')) {
                 const promises = selectedIds.map(id =>
                     axios.put(`${API_BASE_URL}/orders/${id}/status`, { status: 'reported', payment_status: 'pending', userId: CURRENT_USER_ID })
@@ -754,55 +699,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             await fetchAllData();
         }
     });
-    
-    // NOUVEAUX GESTIONNAIRES pour les modales d'actions groupées
-    document.getElementById('bulkPaymentCashBtn').onclick = async () => {
-        try {
-            const promises = currentOrdersToAssign.map(id =>
-                axios.put(`${API_BASE_URL}/orders/${id}/status`, { status: 'delivered', payment_status: 'cash', userId: CURRENT_USER_ID })
-            );
-            await Promise.all(promises);
-            showNotification(`${currentOrdersToAssign.length} commande(s) livrée(s) (cash) avec succès.`);
-        } catch (error) {
-            showNotification("Erreur lors de la mise à jour des statuts.", 'danger');
-        } finally {
-            bulkStatusActionModal.hide();
-            await fetchAllData();
-        }
-    };
-            
-    document.getElementById('bulkPaymentSupplierBtn').onclick = async () => {
-        try {
-            const promises = currentOrdersToAssign.map(id =>
-                axios.put(`${API_BASE_URL}/orders/${id}/status`, { status: 'delivered', payment_status: 'paid_to_supplier', userId: CURRENT_USER_ID })
-            );
-            await Promise.all(promises);
-            showNotification(`${currentOrdersToAssign.length} commande(s) livrée(s) (paiement marchand) avec succès.`);
-        } catch (error) {
-            showNotification("Erreur lors de la mise à jour des statuts.", 'danger');
-        } finally {
-            bulkStatusActionModal.hide();
-            await fetchAllData();
-        }
-    };
-
-    bulkFailedDeliveryForm.onsubmit = async (e) => {
-        e.preventDefault();
-        const amountReceived = document.getElementById('bulkAmountReceived').value;
-        try {
-            const promises = currentOrdersToAssign.map(id =>
-                axios.put(`${API_BASE_URL}/orders/${id}/status`, { status: 'failed_delivery', amount_received: amountReceived, userId: CURRENT_USER_ID })
-            );
-            await Promise.all(promises);
-            showNotification(`${currentOrdersToAssign.length} commande(s) mise(s) à jour en Livraison ratée.`);
-        } catch (error) {
-            showNotification("Erreur lors de la mise à jour des statuts.", 'danger');
-        } finally {
-            bulkFailedDeliveryModal.hide();
-            await fetchAllData();
-        }
-    };
-
 
     assignDeliveryForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -915,14 +811,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     };
     
-    // --- INITIALISATION ---
-    
-    // AJOUT: Définir la date du jour par défaut
     const today = new Date().toISOString().slice(0, 10);
     startDateFilter.value = today;
     endDateFilter.value = today;
 
-    // Ajout des écouteurs d'événements dynamiques
     searchInput.addEventListener('input', applyFilters);
     startDateFilter.addEventListener('change', applyFilters);
     endDateFilter.addEventListener('change', applyFilters);
@@ -930,18 +822,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     statusFilterMenu.addEventListener('click', (e) => {
         const option = e.target.closest('.status-filter-option');
         if (option) {
-            e.preventDefault(); // Empêche le lien de naviguer
             selectedStatusFilter = option.dataset.status;
             statusFilterBtn.textContent = `Statut : ${option.textContent}`;
             applyFilters();
         }
     });
 
-    // Chargement initial des données
     await Promise.all([fetchShops(), fetchDeliverymen()]);
-    await fetchAllData(); // applyFilters() est appelé à l'intérieur de fetchAllData
-    
-    // Configuration des fonctionnalités annexes
+    await fetchAllData();
     setupShopSearch('shopSearchInput', 'searchResults', 'selectedShopId');
     setupShopSearch('editShopSearchInput', 'editSearchResults', 'editSelectedShopId');
     setupDeliverymanSearch();
@@ -949,15 +837,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     editAddItemBtn.addEventListener('click', () => addItemRow(editItemsContainer));
     handleRemoveItem(itemsContainer);
     handleRemoveItem(editItemsContainer);
-    filterBtn.addEventListener('click', applyFilters); // Garde le bouton pour un filtre manuel si besoin
+    filterBtn.addEventListener('click', applyFilters);
     
-    // Activer les tooltips une première fois au chargement
     const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
     tooltipTriggerList.map(function(tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl);
     });
 
-    // Logique du menu latéral (Sidebar)
     const sidebar = document.getElementById('sidebar');
     const mainContent = document.getElementById('main-content');
     const sidebarToggler = document.getElementById('sidebar-toggler');
